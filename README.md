@@ -188,7 +188,7 @@ screenRender();
 ### 漂亮！
 ![页面设置](/img3.jpg)
 
-### 接下来我们生成柱体，数据采集于https://disease.sh，并已转换方便我们使用的结构，保存在data.js
+### 接下来我们生成柱体，数据采集于[https://disease.sh](https://disease.sh)，并已转换方便我们使用的结构，保存在data.js
 
 ```js
 // 转换好的数据

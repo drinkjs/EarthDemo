@@ -271,3 +271,5 @@ screenRender();
 ### 最终效果
 ![页面设置](/img4.jpg)
 
+### 教程完整代码：[https://github.com/drinkjs/EarthDemo](https://github.com/drinkjs/EarthDemo)
+### 整体效果代码：[https://github.com/drinkjs/mojito](https://github.com/drinkjs/mojito)

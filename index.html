@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EarthDemo</title>
+    <script src="https://cdn.staticfile.org/three.js/r125/three.min.js"></script>
+    <script src="https://d3js.org/d3.v6.js"></script>
+    <script src="https://unpkg.com/three@0.125.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.125.0/examples/js/utils/BufferGeometryUtils.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        width: 100%;
+      }
+      body {
+        background-color: #414141;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="box" style="width: 100%; height: 100%">
+      <canvas id="canvas" style="width: 100%; height: 100%" />
+    </div>
+    <script type="module">
+      import data from "./data.js";
+      import mapPoints from "./mapPoints.js";
+
+      // div的dom引用
+      const box = document.getElementById("box");
+      const canvas = document.getElementById("canvas");
+
+      const globeWidth = 2000;
+      const globeHeight = 961;
+      const globeRadius = 100; // 球体半径
+      const globeSegments = 64; // 球体面数，数量越大越光滑，性能消耗越大
+
+      let glRender; // webgl渲染器
+      let camera; // 摄像机
+      let earthMesh; // 地球的Mesh
+      let scene; // 场景，一个大容器，可以理解为html中的body
+      let meshGroup; // 所有mesh的容器，后面所有mesh都会放在这里面，方便我们管理，可理解为一个div
+      let controls; // 轨道控制器，实现整体场景的控制
+
+      /**
+       * 渲染场景
+       */
+      function screenRender() {
+        // 更新
+        if (resizeRendererToDisplaySize()) {
+          const canvas = glRender.domElement;
+          camera.aspect = canvas.clientWidth / canvas.clientHeight;
+          camera.updateProjectionMatrix();
+        }
+
+        meshGroup.rotation.y += 0.001;
+        glRender.render(scene, camera);
+        controls.update();
+        requestAnimationFrame(screenRender);
+      }
+
+      /**
+       * 生成点状世界地图
+       */
+      function createMapPoints() {
+        // 点的基本材质.
+        const material = new THREE.MeshBasicMaterial({
+          color: "#AAA",
+        });
+
+        const sphere = [];
+        for (let point of mapPoints.points) {
+          // 循环遍历所有点将2维坐标映射到3维坐标
+          const pos = convertFlatCoordsToSphereCoords(point.x, point.y);
+          if (pos.x && pos.y && pos.z) {
+            // 生成点阵
+            const pingGeometry = new THREE.SphereGeometry(0.4, 5, 5);
+            pingGeometry.translate(pos.x, pos.y, pos.z);
+            sphere.push(pingGeometry);
+          }
+        }
+        // 合并所有点阵生成一个mesh对象
+        const earthMapPoints = new THREE.Mesh(
+          THREE.BufferGeometryUtils.mergeBufferGeometries(sphere),
+          material
+        );
+        meshGroup.add(earthMapPoints);
+      }
+
+      /**
+       * 2d的地图坐标转为球体3d坐标
+       * @param x
+       * @param y
+       */
+      function convertFlatCoordsToSphereCoords(x, y) {
+        // Calculate the relative 3d coordinates using Mercator projection relative to the radius of the globe.
+        // Convert latitude and longitude on the 90/180 degree axis.
+        let latitude = ((x - globeWidth) / globeWidth) * -180;
+        let longitude = ((y - globeHeight) / globeHeight) * -90;
+        latitude = (latitude * Math.PI) / 180; //(latitude / 180) * Math.PI
+        longitude = (longitude * Math.PI) / 180; //(longitude / 180) * Math.PI // Calculate the projected starting point
+
+        const radius = Math.cos(longitude) * globeRadius;
+        const targetX = Math.cos(latitude) * radius;
+        const targetY = Math.sin(longitude) * globeRadius;
+        const targetZ = Math.sin(latitude) * radius;
+        return {
+          x: targetX,
+          y: targetY,
+          z: targetZ,
+        };
+      }
+
+      // 经纬度转成球体坐标
+      function convertLatLngToSphereCoords(latitude, longitude, radius) {
+        const phi = (latitude * Math.PI) / 180;
+        const theta = ((longitude - 180) * Math.PI) / 180;
+        const x = -(radius + -1) * Math.cos(phi) * Math.cos(theta);
+        const y = (radius + -1) * Math.sin(phi);
+        const z = (radius + -1) * Math.cos(phi) * Math.sin(theta);
+        return {
+          x,
+          y,
+          z,
+        };
+      }
+
+      /**
+       * 生成柱状图
+       */
+      const colors = [
+        "#ffdfe0",
+        "#ffc0c0",
+        "#FF0000",
+        "#ee7070",
+        "#c80200",
+        "#900000",
+        "#510000",
+        "#290000",
+      ];
+      const domain = [
+        1000,
+        3000,
+        10000,
+        50000,
+        100000,
+        500000,
+        1000000,
+        1000000,
+      ];
+
+      function createBar() {
+        if (!data || data.length === 0) return;
+
+        let color;
+        // d3比例尺
+        const scale = d3.scaleLinear().domain(domain).range(colors);
+
+        data.forEach(({ lat, lng, value: size }) => {
+          // 通过比例尺获取数据对应的颜色
+          color = scale(size);
+          const pos = convertLatLngToSphereCoords(lat, lng, globeRadius);
+          if (pos.x && pos.y && pos.z) {
+            // 我们使用立方体来生成柱状图
+            const geometry = new THREE.BoxGeometry(2, 2, 1);
+            // 移动立方体Z使其立在地球表面
+            geometry.applyMatrix4(
+              new THREE.Matrix4().makeTranslation(0, 0, -0.5)
+            );
+            const barMesh = new THREE.Mesh(
+              geometry,
+              new THREE.MeshBasicMaterial({
+                color,
+              })
+            );
+            // 设置位置
+            barMesh.position.set(pos.x, pos.y, pos.z);
+            // 设置朝向
+            barMesh.lookAt(earthMesh.position);
+            // 根据数据设置柱的长度, 除20000主了为了防止柱体过长，可以根据实际情况调整，或做成参数
+            barMesh.scale.z = Math.max(size/20000, 0.1);
+            barMesh.updateMatrix();
+            meshGroup.add(barMesh);
+          }
+        });
+      }
+
+      /**
+       * 场景自适应
+       * @param renderer
+       */
+      function resizeRendererToDisplaySize() {
+        // 兼容视网膜屏
+        const pixelRatio = window.devicePixelRatio;
+        const width = (box.offsetWidth * pixelRatio) | 0;
+        const height = (box.offsetHeight * pixelRatio) | 0;
+
+        const needResize = canvas.width !== width || canvas.height !== height;
+        if (needResize) {
+          glRender.setSize(width, height, false);
+        }
+        return needResize;
+      }
+
+      // 创建webgl渲染器
+      glRender = new THREE.WebGLRenderer({ canvas, alpha: true });
+      glRender.setSize(canvas.clientWidth, canvas.clientHeight, false);
+      // 创建场景
+      scene = new THREE.Scene();
+
+      // 创建相机
+      const fov = 45;
+      const aspect = canvas.clientWidth / canvas.clientHeight;
+      const near = 1;
+      const far = 4000;
+      camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+      camera.position.z = 400;
+
+      // 轨道控制器
+      controls = new THREE.OrbitControls(camera, canvas);
+      controls.target.set(0, 0, 0);
+
+      // 创建容器
+      meshGroup = new THREE.Group();
+
+      scene.add(meshGroup);
+
+      // 创建一个球体
+      const geometry = new THREE.SphereGeometry(
+        globeRadius,
+        globeSegments,
+        globeSegments
+      );
+      // 创建球体材质
+      const material = new THREE.MeshBasicMaterial({
+        transparent: true, // 设置是否透明
+        opacity: 0.5, // 透明度
+        color: 0x000000, // 颜色
+      });
+
+      earthMesh = new THREE.Mesh(geometry, material);
+      meshGroup.add(earthMesh);
+
+      createMapPoints();
+
+      createBar();
+
+      // 渲染场景
+      screenRender();
+
+    </script>
+  </body>
+</html>

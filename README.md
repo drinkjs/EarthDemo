@@ -102,7 +102,7 @@ screenRender()
 ![页面设置](/img2.jpg)
 ### 使用绘图处理工具绘制点阵墨卡托投影的贴图
 ![页面设置](/dots.jpg)
-### 我们把地图所有点阵的坐标记录下，具体怎么样记录这里不详细展开了，因为这不是重点，最终结果保存在mapPoints.js
+### 我们把地图所有点阵的坐标记录下，最终结果保存在mapPoints.js
 ```js
 export default {
   "points": [
